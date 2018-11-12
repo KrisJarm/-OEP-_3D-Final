@@ -1,1 +1,496 @@
-{"url": "https://docs.google.com/open?id=1aWLowFlQtyTbHxj7vRA1Ceafa3Lr9DSO", "doc_id": "1aWLowFlQtyTbHxj7vRA1Ceafa3Lr9DSO", "email": "puntatootatop@gmail.com"}
+//Begin page Define
+#define DEBRIS 5
+#define RENDEZVOUS 10
+#define HOOK 15
+#define TUG 20
+//End page Define
+//Begin page Functions
+float getDistance(float *a, float *b)
+{
+    float distance[3];
+    mathVecSubtract(distance,a,b,3);
+    return mathVecMagnitude(distance,3);
+}
+
+void stabilizeSphere(){
+    float stop[3], state[12];
+    
+    api.getMyZRState(state);
+    stop[0] = stop[1] = stop[2] = 0.0f;
+    
+    api.setAttRateTarget(stop);
+}
+
+void brakes(){
+    
+    float force[3], state[12];
+    
+    api.getMyZRState(state);
+    
+    for(int i = 0; i < 3; i++){
+        force[i] = -state[i+3];
+    }
+    
+    api.setForces(force);
+}
+//End page Functions
+//Begin page Path
+float pathFinder(float debrisPos[41][4]){
+    
+    float m[4];
+    float temp = -1;
+    int largest = -1;
+    
+    for(int i = 32;  i < 41; i++){
+        debrisPos[i][1] = 0.0;
+    }
+    
+    //33 34 36 37 (actually quad 1)
+    m[0] = (getDistance(debrisPos[33], debrisPos[34]) + getDistance(debrisPos[34], debrisPos[37]) + getDistance(debrisPos[37], debrisPos[36]) + getDistance(debrisPos[36], debrisPos[33])); 
+   // DEBUG(("m[0]: %f", m[0])); 
+    
+    //32 33 35 36 (actually quad 2)
+    m[1] = (getDistance(debrisPos[32], debrisPos[33]) + getDistance(debrisPos[33], debrisPos[36]) + getDistance(debrisPos[36], debrisPos[35]) + getDistance(debrisPos[35], debrisPos[32])); 
+    //DEBUG(("m[1]: %f", m[1])); 
+    
+    //35 36 38 39 (actually quad 3)
+    m[2] = (getDistance(debrisPos[35], debrisPos[36]) + getDistance(debrisPos[36], debrisPos[39]) + getDistance(debrisPos[39], debrisPos[38]) + getDistance(debrisPos[38], debrisPos[35])); 
+   // DEBUG(("m[2]: %f", m[2])); 
+    
+    //36 37 39 40 (actually quad 4)
+    m[3] = (getDistance(debrisPos[36], debrisPos[37]) + getDistance(debrisPos[37], debrisPos[40]) + getDistance(debrisPos[40], debrisPos[39]) + getDistance(debrisPos[39], debrisPos[36])); 
+    //DEBUG(("m[3]: %f", m[3])); 
+    
+    for(int i = 0; i < 4; i++){
+        if(m[i] > temp){
+            largest = i;
+            temp = m[i];
+        }
+    }
+    DEBUG(("largest: %d", largest));
+    
+    return largest;
+} 
+//End page Path
+//Begin page main
+float myPos[3], whereToLook[3], otherPos[3], myState[12], otherState[12], myEuler[12], otherEuler[12], eulerTarget[3], whereToGo[3];
+float renPoint[3], orangeEdgeDis, debrisPos[41][4], angularVel[3];
+float midpoint[3], purple[3], edgyOutsider[12];
+float smallX, largeX, smallY, largeY, smallZ, largeZ;
+float kVel, thruster;
+int phase, quadrant, curve, check, counter;
+bool left;
+
+int stopper;
+float othaanga, angel;
+float distanzia;
+
+void init(){
+	
+	smallX = largeX = smallY = largeY = smallZ = largeZ = 0.0;
+	
+	whereToLook[0] = 0.0f;
+    whereToLook[1] = -1.0f;
+    whereToLook[2] = 0.0f;
+	
+	whereToGo[0] = 0.0f;
+	whereToGo[1] = 0.0f;
+	whereToGo[2] = 0.0f;
+	
+	renPoint[0] = 0.18f;
+    renPoint[1] = -0.13f;
+    renPoint[2] = -0.043f;
+	
+	angularVel[0] = angularVel[1] = angularVel[2] = eulerTarget[0] = eulerTarget[1] = eulerTarget[2] = 0.0;
+	
+	phase = DEBRIS;
+	
+	left = false;
+	
+	curve = check = stopper = counter = 0;
+	purple[0] = purple[1] = purple[2] = angularVel[0] = angularVel[1] =  angularVel[2] = 0.0;
+	
+	game.getDebris(debrisPos);
+}
+
+void loop(){
+    
+    api.getMyZRState(myState);
+    game.getMyEulerState(myEuler);
+    api.getOtherZRState(otherState);
+    game.getOtherEulerState(otherEuler);
+    thruster = game.getThrusterHealth();
+    
+    for(int i = 0; i < 3; i++)
+    {
+        myPos[i] = myState[i];    
+        otherPos[i] = otherState[i];
+    }
+    
+    if(phase == DEBRIS){
+        
+        kVel = 0.037;
+    	orangeEdgeDis = 0.64 - debrisPos[37][0] - 0.09;
+    	    
+    	//finds the biggest gap between the yellow debris
+    	quadrant = pathFinder(debrisPos);
+    	    
+    	if(quadrant == 0){
+    	   //33, 34, 36, 37
+    	   for(int i = 33; i < 37; i++){
+    	       if(i == 35 || i == 36){
+    	            i++;
+    	       }
+    	       if(debrisPos[i][0] < smallX){
+    	            smallX = debrisPos[i][0];
+    	       }
+    	       if(debrisPos[i][0] > largeX){
+    	            largeX = debrisPos[i][0];
+    	       }
+    	            
+    	       if(debrisPos[i][1] < smallY){
+    	            smallY = debrisPos[i][1];
+    	       }
+    	       if(debrisPos[i][1] > largeY){
+    	            largeY = debrisPos[i][1];
+    	       }
+    	            
+    	       if(debrisPos[i][2] < smallZ){
+    	            smallZ = debrisPos[i][2];
+    	       }
+    	       if(debrisPos[i][2] > largeZ){
+    	            largeZ = debrisPos[i][2];
+    	        }
+    	   }
+    	   
+    	    }
+    	    
+    	    if(quadrant == 1){
+    	        //32, 33, 35, 36
+    	        
+    	        for(int i = 32; i < 36; i++){
+    	            if(i == 34 || i == 35){
+    	                i++;
+    	            }
+    	            if(debrisPos[i][0] < smallX){
+    	                smallX = debrisPos[i][0];
+    	            }
+    	            if(debrisPos[i][0] > largeX){
+    	                largeX = debrisPos[i][0];
+    	            }
+    	            
+    	            if(debrisPos[i][1] < smallY){
+    	                smallY = debrisPos[i][1];
+    	            }
+    	            if(debrisPos[i][1] > largeY){
+    	                largeY = debrisPos[i][1];
+    	            }
+    	            
+    	            if(debrisPos[i][2] < smallZ){
+    	                smallZ = debrisPos[i][2];
+    	            }
+    	            if(debrisPos[i][2] > largeZ){
+    	                largeZ = debrisPos[i][2];
+    	            }
+    	        }
+    	    }
+    	    if(quadrant == 2){
+    	        //35, 36, 38, 39
+    	        
+    	        for(int i = 35; i < 39; i++){
+    	            if(i == 37 || i == 38){
+    	                i++;
+    	            }
+    	            if(debrisPos[i][0] < smallX){
+    	                smallX = debrisPos[i][0];
+    	            }
+    	            if(debrisPos[i][0] > largeX){
+    	                largeX = debrisPos[i][0];
+    	            }
+    	            
+    	            if(debrisPos[i][1] < smallY){
+    	                smallY = debrisPos[i][1];
+    	            }
+    	            if(debrisPos[i][1] > largeY){
+    	                largeY = debrisPos[i][1];
+    	            }
+    	            
+    	            if(debrisPos[i][2] < smallZ){
+    	                smallZ = debrisPos[i][2];
+    	            }
+    	            if(debrisPos[i][2] > largeZ){
+    	                largeZ = debrisPos[i][2];
+    	            }
+    	        }
+    	        
+    	    }
+    	    
+    	    if(quadrant == 3){
+    	        //36, 37, 39, 40
+    	        for(int i = 36; i < 40; i++){
+    	            if(i == 38 || i == 39){
+    	                i++;
+    	            }
+    	            if(debrisPos[i][0] < smallX){
+    	                smallX = debrisPos[i][0];
+    	            }
+    	            if(debrisPos[i][0] > largeX){
+    	                largeX = debrisPos[i][0];
+    	            }
+    	            
+    	            if(debrisPos[i][1] < smallY){
+    	                smallY = debrisPos[i][1];
+    	            }
+    	            if(debrisPos[i][1] > largeY){
+    	                largeY = debrisPos[i][1];
+    	            }
+    	            
+    	            if(debrisPos[i][2] < smallZ){
+    	                smallZ = debrisPos[i][2];
+    	            }
+    	            if(debrisPos[i][2] > largeZ){
+    	                largeZ = debrisPos[i][2];
+    	            }
+    	        }
+    	    }
+    	    
+    	    midpoint[0] = ((smallX+largeX)/2);
+    	    midpoint[1] = ((smallY+largeY)/2);
+    	    midpoint[2] = ((smallZ+largeZ)/2);
+    	    
+    	    //checks if any the gap is too small for our robot
+        	for(int i = 32; i < 41; i++){
+    	        if(getDistance(midpoint, debrisPos[i]) < 0.26){
+    	           quadrant = 4;
+    	        }
+    	   }
+    	   
+    	   //checks if the gap has too many puprles in the way /16 - 31
+    	    check = 0;
+    	    for(int i = 16; i < 32; i++){
+    	        
+    	        if(getDistance(midpoint, debrisPos[i]) < 0.06){
+    	            check++;
+    	        }
+    	        
+    	        if(check >= 3){
+    	            quadrant = 4;
+    	        }
+    	    }
+        	
+        	//if middle gap is still unsafe, then move on the right side
+    	    if(quadrant == 4){
+
+            kVel = 0.047f;
+    	   
+    	        if(debrisPos[34][0] <= debrisPos[40][0]){
+    	            
+    	            if(debrisPos[34][0] > debrisPos[37][0]){
+    	                smallX = debrisPos[34][0] + 0.125;
+    	            }
+    	            else if((debrisPos[37][0] + 0.13) < 0.63){
+    	                smallX = debrisPos[37][0] + 0.125;
+    	            }
+    	            
+    	            whereToGo[0] = smallX;
+        	        whereToGo[1] = 0.5;
+        	        whereToGo[2] = ((debrisPos[34][2] + debrisPos[37][2])/2);
+    	        }
+    	        else{
+    	            
+    	            if(debrisPos[37][0] > debrisPos[40][0]){
+    	                smallX = debrisPos[37][0] + 0.125;
+    	            }
+    	            else{
+    	                smallX = debrisPos[40][0] + 0.125;
+    	            }
+    	            whereToGo[0] = smallX;
+        	        whereToGo[1] = 0.5;
+        	        whereToGo[2] = ((debrisPos[37][2] + debrisPos[40][2])/2);
+    	        }
+    	        
+    	        //-----------//
+    	        if(curve == 0 && getDistance(myPos, whereToGo) < 0.05){
+    	            whereToGo[2] = myPos[2];
+    	            curve++;
+    	        }
+    	        
+    	        if(curve == 1){
+            	    whereToGo[1] = -0.185; //0.018
+    	        }
+    	    }    
+    	    if(quadrant < 4){
+            //travel through the gaps
+                
+                if(curve == 0){
+                    kVel = 0.067f; //0.065
+                    
+                    whereToGo[0] = midpoint[0];
+                    whereToGo[1] = 0.55;
+                    whereToGo[2] = midpoint[2];
+                    curve++;
+                }
+                
+            	if(fabsf(whereToGo[0] - myPos[0]) < 0.01 && fabsf(whereToGo[2] - myPos[2]) < 0.01 && curve == 1){
+            	    
+            	    kVel = 0.047f;
+            	    whereToGo[0] = myPos[0];
+                    whereToGo[1] = -0.185; //0.185
+                    whereToGo[2] = myPos[2];
+                    curve++;
+                }
+    	    }       
+    	    
+            if(myPos[1] <= 0){
+                
+                phase = RENDEZVOUS;
+            }
+    }
+    
+    if(phase == RENDEZVOUS){
+        kVel = 0.04f; 
+        
+        if(thruster < 55 || game.getScore() <= 2.75){
+            
+            renPoint[0] = 0.19f;
+            renPoint[1] = -0.13f;
+            renPoint[2] = 0.038f;
+            
+            if(left == true){
+                renPoint[0] = 0.18f;
+                renPoint[1] = -0.13f;
+                renPoint[2] = 0.065f;
+            }
+        }
+        
+        for(int i = 0; i < 3; i++){
+            whereToGo[i] = renPoint[i];
+        }
+        
+        if(getDistance(myPos, whereToGo) <= 0.11){ 
+            stabilizeSphere();
+            brakes();
+            
+            kVel = 0.9f;
+            
+            api.setPositionTarget(myPos);
+            
+            angularVel[0] = -myState[9];
+            angularVel[1] = -myState[10];
+            angularVel[2] = -myState[11];
+            
+            DEBUG(("Hold Your Horses!"));
+        }
+        else{
+            angularVel[0] = -otherState[9];
+            angularVel[1] = 0;
+            angularVel[2] = 0;
+        }
+        
+        if(game.checkRendezvous()){
+            game.completeRendezvous();
+            curve = 0;
+            
+            DEBUG(("Space Jam!"));
+            phase = HOOK;
+        }
+    }
+    
+    if(phase == HOOK){
+        
+        kVel = 0.05f;
+        
+        
+        distanzia = sqrtf((otherPos[0] * otherPos[0]) + (otherPos[2] * otherPos[2]));
+        angel = asin(otherPos[2]/distanzia);
+        
+        eulerTarget[0] = PI - otherEuler[6];
+        eulerTarget[1] = -otherEuler[7];
+        eulerTarget[2] = -PI + otherEuler[8];
+        game.setEulerTarget(eulerTarget);
+        
+
+        if(curve == 0){
+            
+            whereToGo[0] = otherPos[0] + (cosf(angel) * 0.06);
+            whereToGo[1] = otherPos[1] + 0.313f;
+            whereToGo[2] = otherPos[2] + (sinf(angel) * 0.063);
+        
+            if(getDistance(myPos, whereToGo) <= 0.007){
+            curve++;
+            }
+        }
+        
+        if(curve == 1){
+            
+            whereToGo[0] = otherPos[0] + (cosf(angel) * 0.06);
+            whereToGo[1] = otherPos[1] + 0.3313f;
+            whereToGo[2] = otherPos[2] + (sinf(angel) * 0.063);
+
+        }
+        stabilizeSphere();
+        if(game.getGamePhase() == 4){
+            phase = TUG;
+        }
+    }
+    
+    if(phase == TUG){
+        kVel = 0.9f;
+        
+        whereToGo[0] = otherPos[0] + (cosf(angel) * 0.06);
+        whereToGo[1] = 0.75;
+        whereToGo[2] = otherPos[2] + (sinf(angel) * 0.06); 
+        
+        counter++;
+        DEBUG(("LUCKY LAND"));
+    }
+    
+    
+    //controls over the rates in which our robot rotates and moves:
+	float distance = getDistance(myPos, whereToGo);
+    
+    kVel /= (thruster/100);
+    
+    float velocity = (((distance*0.0775f)/(kVel))/0.56553f)/14.0f;
+ 
+    float velocityVector[3];
+    mathVecSubtract(velocityVector, whereToGo, myState, 3);
+    mathVecNormalize(velocityVector, 3);
+    for(int i=0;i<3;i++){
+        velocityVector[i]*=velocity;
+}
+    api.setVelocityTarget(velocityVector);
+    api.setAttRateTarget(angularVel);
+    
+    /*float QuatState[13];
+    api.getMySphState(QuatState);
+        
+    float Quat[4];
+    api.attVec2Quat(myState+6,whereToLook,QuatState+6, Quat);
+    api.setQuatTarget(Quat);*/
+    
+    /*DEBUG(("34 and 37: %f", getDistance(debrisPos[34], debrisPos[37])));
+    DEBUG(("37 and 40: %f", getDistance(debrisPos[37], debrisPos[40])));*/
+    //DEBUG(("Check: %d", check));
+    
+    /*DEBUG(("purple[x]: %f", purple[0]));
+    DEBUG(("purple[y]: %f", purple[1]));
+    DEBUG(("purple[z]: %f", purple[2]));*/
+    //DEBUG(("Distance: %f", getDistance(myPos, whereToGo)));
+   /* DEBUG(("Private Ryan: %f", fabsf(myPos[1] - otherPos[1])));
+    
+    DEBUG(("x: %f", whereToGo[0]));
+    DEBUG(("y: %f", whereToGo[1]));
+    DEBUG(("z: %f", whereToGo[2]));
+    
+   // DEBUG(("smllx: %f", smallX));   
+    DEBUG(("Quadrant: %d", quadrant));
+    DEBUG(("otherEuler[x]: %f", otherEuler[6]));
+    DEBUG(("otherEuler[y]: %f", otherEuler[7]));
+    DEBUG(("otherEuler[z]: %f", otherEuler[8]));*/
+    //DEBUG(("Count: %d", curve));
+    
+   // DEBUG(("KVel: %f", kVel));
+}
+
+//End page main
